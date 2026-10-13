@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>爱心</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
+  }
+  #musicBtn {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 10;
+    background: rgba(255, 105, 180, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: #fff;
+    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    user-select: none;
+  }
+  #musicBtn:hover {
+    background: rgba(255, 105, 180, 0.55);
+  }
+</style>
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+<button id="musicBtn">播放音乐</button>
+
+<audio id="bgm" loop>
+  <source src="music.mp3" type="audio/mpeg" />
+</audio>
+
+<script>
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+// 逻辑画布，不随窗口拉伸
+const W = 640;
+const H = 480;
+cv.width = W;
+cv.height = H;
+
+const CX = W / 2;
+const CY = H / 2;
+const IMAGE_ENLARGE = 11;
+const HEART_COLOR = "#FF69B4";
+const textStr = "我爱你张宇航";   // 修改文字
+const textColor = "#FFD700";
+
+// 跳动频率：数值越小越慢
+const BEAT_SPEED = 0.045;
+
+function heartFunction(t, shrink_ratio = IMAGE_ENLARGE) {
+  let x = 16 * Math.pow(Math.sin(t), 3);
+  let y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+  x *= shrink_ratio;
+  y *= shrink_ratio;
+  x += CX;
+  y += CY;
+  return [Math.floor(x), Math.floor(y)];
+}
+
+function scatterInside(x, y, beta = 0.15) {
+  const rx = -beta * Math.log(Math.random());
+  const ry = -beta * Math.log(Math.random());
+  const dx = rx * (x - CX);
+  const dy = ry * (y - CY);
+  return [x - dx, y - dy];
+}
+
+function shrinkPoint(x, y, ratio) {
+  const dx = x - CX;
+  const dy = y - CY;
+  const force = -1 / Math.pow(dx * dx + dy * dy, 0.6);
+  return [x - ratio * force * dx, y - ratio * force * dy];
+}
+
+function curve(p) {
+  return 2 * (2 * Math.sin(4 * p)) / (2 * Math.PI);
+}
+
+class Heart {
+  constructor() {
+    this._points = new Set();
+    this._edgeDiff = new Set();
+    this._centerDiff = new Set();
+    this.build(2000);
+  }
+
+  build(number) {
+    for (let i = 0; i < number; i++) {
+      const t = Math.random() * 2 * Math.PI;
+      const [x, y] = heartFunction(t);
+      this._points.add(x + "," + y);
+    }
+
+    const pts = Array.from(this._points).map(s => s.split(",").map(Number));
+    for (let [x, y] of pts) {
+      for (let k = 0; k < 3; k++) {
+        const [nx, ny] = scatterInside(x, y, 0.05);
+        this._edgeDiff.add(nx + "," + ny);
+      }
+    }
+
+    const pointList = Array.from(this._points).map(s => s.split(",").map(Number));
+    for (let i = 0; i < 4000; i++) {
+      const [x, y] = pointList[Math.floor(Math.random() * pointList.length)];
+      const [nx, ny] = scatterInside(x, y, 0.17);
+      this._centerDiff.add(nx + "," + ny);
+    }
+  }
+
+  static calcPos(x, y, ratio) {
+    const dx = x - CX;
+    const dy = y - CY;
+    const force = 1 / Math.pow(dx * dx + dy * dy, 0.520);
+    const nx = x - ratio * force * dx + (Math.random() > 0.5 ? 1 : -1);
+    const ny = y - ratio * force * dy + (Math.random() > 0.5 ? 1 : -1);
+    return [nx, ny];
+  }
+
+  render(time) {
+    const ratio = 10 * curve(time * BEAT_SPEED);
+    const haloR = Math.floor(4 + 6 * (1 + curve(time * BEAT_SPEED)));
+    const haloNum = Math.floor(3000 + 4000 * Math.pow(Math.abs(curve(time * BEAT_SPEED)), 2));
+
+    ctx.fillStyle = "rgba(0, 0, 0, 1)";
+    ctx.fillRect(0, 0, W, H);
+
+    // 光环
+    const haloSet = new Set();
+    for (let i = 0; i < haloNum; i++) {
+      const t = Math.random() * 2 * Math.PI;
+      let [x, y] = heartFunction(t, 11.6);
+      [x, y] = shrinkPoint(x, y, haloR);
+      const key = Math.floor(x) + "," + Math.floor(y);
+      if (!haloSet.has(key)) {
+        haloSet.add(key);
+        x += Math.floor(Math.random() * 29 - 14);
+        y += Math.floor(Math.random() * 29 - 14);
+        const sz = [1, 2, 2][Math.floor(Math.random() * 3)];
+        ctx.fillStyle = HEART_COLOR;
+        ctx.fillRect(x, y, sz, sz);
+      }
+    }
+
+    // 轮廓
+    for (let s of this._points) {
+      let [x, y] = s.split(",").map(Number);
+      [x, y] = Heart.calcPos(x, y, ratio);
+      ctx.fillStyle = HEART_COLOR;
+      ctx.fillRect(x, y, 2, 2);
+    }
+
+    // 边缘扩散
+    for (let s of this._edgeDiff) {
+      let [x, y] = s.split(",").map(Number);
+      [x, y] = Heart.calcPos(x, y, ratio);
+      ctx.fillStyle = HEART_COLOR;
+      ctx.fillRect(x, y, 1, 1);
+    }
+
+    // 中心扩散
+    for (let s of this._centerDiff) {
+      let [x, y] = s.split(",").map(Number);
+      [x, y] = Heart.calcPos(x, y, ratio);
+      ctx.fillStyle = "rgba(255, 105, 180, 0.85)";
+      ctx.fillRect(x, y, 1, 1);
+    }
+
+    // 中间文字
+    ctx.fillStyle = textColor;
+    ctx.font = "bold 24px SimHei, Microsoft YaHei, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(textStr, CX, CY);
+  }
+}
+
+const heart = new Heart();
+let time = 0;
+
+function animate() {
+  heart.render(time);
+  time++;
+  requestAnimationFrame(animate);
+}
+animate();
+
+// 背景音乐
+const bgm = document.getElementById("bgm");
+const musicBtn = document.getElementById("musicBtn");
+let musicOn = false;
+
+musicBtn.addEventListener("click", () => {
+  if (!musicOn) {
+    bgm.play().then(() => {
+      musicOn = true;
+      musicBtn.textContent = "暂停音乐";
+    }).catch(err => {
+      alert("音乐加载失败，请确认 music.mp3 和 html 在同一目录，或使用本地音乐链接。");
+      console.error(err);
+    });
+  } else {
+    bgm.pause();
+    musicOn = false;
+    musicBtn.textContent = "播放音乐";
+  }
+});
+</script>
+
+</body>
+</html>
